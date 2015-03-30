@@ -1,0 +1,5 @@
+#!/bin/sh
+
+export SLACK_TOKEN=xxx
+export SLACK_ENDPOINT=xxx 
+./gradlew run
