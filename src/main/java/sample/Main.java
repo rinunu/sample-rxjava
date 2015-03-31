@@ -60,16 +60,18 @@ class Sample {
     @SneakyThrows
     public void slackSampleMain() {
         getSlackMessages()
-            .filter(message -> message.startsWith("get-image"))
-                // URI は <...> という形式に変換されて投稿される
-            .map(s -> s.replaceAll(".*<(.*)>.*", "$1"))
-                // URI に変換(変換できないものは無視)
-            .flatMap(mes -> Observable.just(uri(mes)))
-            .onErrorResumeNext(throwable -> Observable.empty())
-            .filter(uri -> uri.isAbsolute()) // 絶対 URI だけ残す
-            .flatMap(uri -> getImageUris(uri).take(5)) // 最初の5つだけ残す
-            .flatMap(uri -> sendToSlack(uri.toString()))
-            .subscribe();
+                .filter(message -> message.startsWith("get-image"))
+                        // URI は <...> という形式に変換されて投稿される
+                .map(s -> s.replaceAll(".*<(.*)>.*", "$1"))
+                        // URI に変換(変換できないものは無視)
+                .flatMap(mes -> Observable.just(uri(mes)))
+                .onErrorResumeNext(throwable -> Observable.empty())
+                .filter(uri -> uri.isAbsolute()) // 絶対 URI だけ残す
+                .flatMap(uri -> getImageUris(uri)
+                        .filter(imageUri -> imageUri.toString().toLowerCase().endsWith(".jpg")) // jpg だけ
+                        .take(2)) // 最初の2つだけ残す
+                .flatMap(uri -> sendToSlack(uri.toString()))
+                .subscribe();
 
         sleep(1000000);
     }
@@ -158,29 +160,30 @@ class Sample {
     public Observable<Void> sendToSlack(String message) {
         // curl -X POST --data-urlencode 'payload={"text": "This is posted to <#general> and comes from *monkey-bot*.", "channel": "#general", "username": "monkey-bot", "icon_emoji": ":monkey_face:"}' https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX
         return Observable.create(subscriber -> {
-                try {
-                    HttpRequestFactory requestFactory = httpTransport.createRequestFactory();
+                    try {
+                        HttpRequestFactory requestFactory = httpTransport.createRequestFactory();
 
-                    String endpoint = System.getenv("SLACK_ENDPOINT");
-                    if (Strings.isNullOrEmpty(endpoint)) {
-                        throw new RuntimeException("SLACK_ENDPOINT 環境変数を設定してね");
+                        String endpoint = System.getenv("SLACK_ENDPOINT");
+                        if (Strings.isNullOrEmpty(endpoint)) {
+                            throw new RuntimeException("SLACK_ENDPOINT 環境変数を設定してね");
+                        }
+                        GenericUrl url = new GenericUrl(endpoint);
+                        GenericData data = new GenericData();
+                        data.put("text", message);
+//                        data.put("channel", "#test_");
+                        data.put("channel", "#general");
+                        data.put("username", "#rinu-bot");
+                        data.put("icon_emoji", ":monkey_face:");
+
+                        HttpContent a = new JsonHttpContent(new JacksonFactory(), data);
+                        HttpRequest req = requestFactory.buildPostRequest(url, a);
+
+                        HttpResponse res = req.execute();
+                        res.disconnect();
+                    } catch (Exception e) {
+                        subscriber.onError(e);
                     }
-                    GenericUrl url = new GenericUrl(endpoint);
-                    GenericData data = new GenericData();
-                    data.put("text", message);
-                    data.put("channel", "#test_");
-                    data.put("username", "#rinu-bot");
-                    data.put("icon_emoji", ":monkey_face:");
-
-                    HttpContent a = new JsonHttpContent(new JacksonFactory(), data);
-                    HttpRequest req = requestFactory.buildPostRequest(url, a);
-
-                    HttpResponse res = req.execute();
-                    res.disconnect();
-                } catch (Exception e) {
-                    subscriber.onError(e);
                 }
-            }
         );
     }
 }
